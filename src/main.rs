@@ -51,8 +51,15 @@ async fn recv_signal() -> Result<()> {
 #[command(version, about)]
 struct Args {
     /// Specifies an address to listen on for a stream.
-    #[arg(short, long, value_name = "ADDRESS", required = true)]
+    #[arg(short, long, value_name = "ADDRESS")]
+    #[cfg_attr(target_os = "macos", arg(required_unless_present = "launchd"))]
+    #[cfg_attr(not(target_os = "macos"), arg(required = true))]
     listen_stream: Vec<String>,
+
+    /// Specifies the name of the socket entry in the service's Sockets dictionary.
+    #[cfg(target_os = "macos")]
+    #[arg(long, value_name = "NAME", conflicts_with = "listen_stream")]
+    launchd: Option<String>,
 
     /// Specifies the name of the service provider.
     #[arg(short, long, value_name = "NAME", required = true)]
@@ -67,7 +74,7 @@ async fn main() -> Result<()> {
 
     let service = juno::create_service(&args.provider)?;
 
-    let listeners = bind_all(&args)
+    let listeners = activate_or_bind_all(&args)
         .await?
         .into_iter()
         .map(|l| listen(l, service.clone()));
@@ -80,6 +87,24 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+async fn activate_or_bind_all(args: &Args) -> Result<Vec<TcpListener>> {
+    if let Some(name) = &args.launchd {
+        launchd::activate_socket::<std::net::TcpListener>(name.as_str())
+            .context("failed to activate from launchd")?
+            .into_iter()
+            .map(|l| TcpListener::from_std(l).map_err(|e| e.into()))
+            .collect()
+    } else {
+        bind_all(args).await
+    }
+}
+
+#[cfg(not(target_os = "macos"))]
+async fn activate_or_bind_all(args: &Args) -> Result<Vec<TcpListener>> {
+    bind_all(args).await
 }
 
 async fn bind_all(args: &Args) -> Result<Vec<TcpListener>> {
@@ -109,5 +134,63 @@ async fn listen(listener: TcpListener, mut service: Service) -> Result<()> {
             .await?;
         debug!("connected from {addr}");
         tokio::task::spawn(service.call(client));
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod launchd {
+    use libc::{c_char, c_int, size_t};
+    use std::ffi::CString;
+    use std::io;
+    use std::os::unix::io::FromRawFd;
+    use std::ptr::null_mut;
+    use std::slice::from_raw_parts;
+
+    pub fn activate_socket<T: FromRawFd>(name: impl Into<Vec<u8>>) -> io::Result<Vec<T>> {
+        extern "C" {
+            fn launch_activate_socket(
+                name: *const c_char,
+                fds: *mut *mut c_int,
+                cnt: *mut size_t,
+            ) -> c_int;
+        }
+
+        let name = CString::new(name)?;
+        let mut fds = null_mut();
+        let mut cnt = 0;
+        match unsafe { launch_activate_socket(name.as_ptr(), &mut fds, &mut cnt) } {
+            0 => {
+                let listeners = unsafe { from_raw_parts(fds, cnt) }
+                    .iter()
+                    .map(|fd| unsafe { T::from_raw_fd(*fd) })
+                    .collect();
+                unsafe { libc::free(fds as _) };
+                Ok(listeners)
+            }
+            code => Err(io::Error::from_raw_os_error(code)),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[allow(unused_imports)]
+    use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn test_launchd() {
+        assert!(Args::try_parse_from(["", "-p", "provider", "-l", "host:port"]).is_ok());
+        assert!(Args::try_parse_from(["", "-p", "provider", "--launchd", "name"]).is_ok());
+        assert!(Args::try_parse_from([
+            "",
+            "-p",
+            "provider",
+            "-l",
+            "host:port",
+            "--launchd",
+            "name"
+        ])
+        .is_err());
     }
 }
