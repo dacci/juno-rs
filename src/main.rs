@@ -4,7 +4,7 @@ use futures::prelude::*;
 use juno::Service;
 use log::{debug, info, warn};
 use tokio::net::TcpListener;
-use tower::Service as _;
+use tower::{Service as _, ServiceExt};
 
 #[cfg(unix)]
 async fn recv_signal() -> Result<()> {
@@ -133,7 +133,7 @@ async fn listen(listener: TcpListener, mut service: Service) -> Result<()> {
             .map(|r| r.context("failed to accept connection"))
             .await?;
         debug!("connected from {addr}");
-        tokio::task::spawn(service.call(client));
+        tokio::task::spawn(service.ready().await?.call(client));
     }
 }
 
