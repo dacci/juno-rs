@@ -53,13 +53,25 @@ struct Args {
     /// Specifies an address to listen on for a stream.
     #[arg(short, long, value_name = "ADDRESS")]
     #[cfg_attr(target_os = "macos", arg(required_unless_present = "launchd"))]
-    #[cfg_attr(not(target_os = "macos"), arg(required = true))]
+    #[cfg_attr(
+        all(target_os = "linux", feature = "systemd"),
+        arg(required_unless_present = "systemd")
+    )]
+    #[cfg_attr(
+        not(any(target_os = "macos", all(target_os = "linux", feature = "systemd"))),
+        arg(required = true)
+    )]
     listen_stream: Vec<String>,
 
     /// Specifies the name of the socket entry in the service's Sockets dictionary.
     #[cfg(target_os = "macos")]
     #[arg(long, value_name = "NAME", conflicts_with = "listen_stream")]
     launchd: Option<String>,
+
+    /// Runs in systemd socket activation mode.
+    #[cfg(all(target_os = "linux", feature = "systemd"))]
+    #[arg(long, value_name = "NAME", conflicts_with = "listen_stream")]
+    systemd: bool,
 
     /// Specifies the name of the service provider.
     #[arg(short, long, value_name = "NAME", required = true)]
@@ -102,7 +114,23 @@ async fn activate_or_bind_all(args: &Args) -> Result<Vec<TcpListener>> {
     }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(all(target_os = "linux", feature = "systemd"))]
+async fn activate_or_bind_all(args: &Args) -> Result<Vec<TcpListener>> {
+    use std::os::unix::io::FromRawFd;
+
+    if args.systemd {
+        systemd::daemon::listen_fds(true)
+            .context("failed to activate from systemd")?
+            .iter()
+            .map(|fd| unsafe { std::net::TcpListener::from_raw_fd(fd) })
+            .map(|l| TcpListener::from_std(l).map_err(|e| e.into()))
+            .collect()
+    } else {
+        bind_all(args).await
+    }
+}
+
+#[cfg(not(any(target_os = "macos", all(target_os = "linux", feature = "systemd"))))]
 async fn activate_or_bind_all(args: &Args) -> Result<Vec<TcpListener>> {
     bind_all(args).await
 }
@@ -192,5 +220,16 @@ mod tests {
             "name"
         ])
         .is_err());
+    }
+
+    #[cfg(all(target_os = "linux", feature = "systemd"))]
+    #[test]
+    fn test_systemd() {
+        assert!(Args::try_parse_from(["", "-p", "provider", "-l", "host:port"]).is_ok());
+        assert!(Args::try_parse_from(["", "-p", "provider", "--systemd"]).is_ok());
+        assert!(
+            Args::try_parse_from(["", "-p", "provider", "-l", "host:port", "--systemd"]).is_err()
+        );
+        assert!(Args::try_parse_from(["", "-p", "provider"]).is_err());
     }
 }

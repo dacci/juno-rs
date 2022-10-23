@@ -54,3 +54,31 @@ Run `launchctl` to load the property list file:
 ```console
 $ launchctl load ~/Library/LaunchAgents/com.github.dacci.juno.plist
 ```
+
+### systemd support (Linux only)
+
+Create unit files with appropriate parameters and run `systemctl` to start daemon.
+
+```console
+$ systemctl --user daemon-reload
+$ systemctl --user start juno.socket
+```
+
+#### Socket unit configuration example (~/.config/systemd/user/juno.socket)
+
+See [systemd.socket(5)](https://www.freedesktop.org/software/systemd/man/systemd.socket.html) for details.
+
+```
+[Socket]
+ListenStream=127.0.0.1:1080
+```
+
+#### Service unit configuration example (~/.config/systemd/user/juno.service)
+
+See [systemd.service(5)](https://www.freedesktop.org/software/systemd/man/systemd.service.html) for details.
+
+```
+[Service]
+ExecStart=/path/to/juno --provider socks --systemd
+NonBlocking=true
+```
