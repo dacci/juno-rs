@@ -1,3 +1,4 @@
+mod http;
 mod socks;
 
 use anyhow::{anyhow, Error, Result};
@@ -8,7 +9,8 @@ pub type Service = BoxCloneService<TcpStream, (), Error>;
 
 pub fn create_service(provider: &str) -> Result<Service> {
     match provider {
-        "socks" => Ok(BoxCloneService::new(socks::provider::Service::new())),
+        "http" => Ok(Service::new(http::Service::new())),
+        "socks" => Ok(Service::new(socks::provider::Service::new())),
         _ => Err(anyhow!("unknown provider: `{provider}`")),
     }
 }
