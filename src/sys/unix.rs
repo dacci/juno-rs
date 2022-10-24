@@ -19,10 +19,10 @@ pub async fn recv_signal() -> io::Result<()> {
 
 #[cfg(target_os = "macos")]
 pub fn activate_socket(name: &str) -> Result<Vec<TcpListener>> {
-    launchd::activate_socket::<std::net::TcpListener>(name)
+    launchd::activate_socket(name)
         .context("failed to activate from launchd")?
         .into_iter()
-        .map(|l| TcpListener::from_std(l).map_err(|e| e.into()))
+        .map(convert_socket)
         .collect()
 }
 
@@ -34,7 +34,7 @@ mod launchd {
     use std::ptr::null_mut;
     use std::slice::from_raw_parts;
 
-    pub fn activate_socket<T: FromRawFd>(name: impl Into<Vec<u8>>) -> io::Result<Vec<T>> {
+    pub fn activate_socket(name: impl Into<Vec<u8>>) -> io::Result<Vec<RawFd>> {
         extern "C" {
             fn launch_activate_socket(
                 name: *const c_char,
@@ -48,12 +48,9 @@ mod launchd {
         let mut cnt = 0;
         match unsafe { launch_activate_socket(name.as_ptr(), &mut fds, &mut cnt) } {
             0 => {
-                let listeners = unsafe { from_raw_parts(fds, cnt) }
-                    .iter()
-                    .map(|fd| unsafe { T::from_raw_fd(*fd) })
-                    .collect();
+                let vec = unsafe { from_raw_parts(fds, cnt) }.to_vec();
                 unsafe { libc::free(fds as _) };
-                Ok(listeners)
+                Ok(vec)
             }
             code => Err(io::Error::from_raw_os_error(code)),
         }
@@ -65,7 +62,51 @@ pub fn activate_socket() -> Result<Vec<TcpListener>> {
     systemd::daemon::listen_fds(true)
         .context("failed to activate from systemd")?
         .iter()
-        .map(|fd| unsafe { std::net::TcpListener::from_raw_fd(fd) })
-        .map(|l| TcpListener::from_std(l).map_err(|e| e.into()))
+        .map(convert_socket)
         .collect()
+}
+
+trait FromStd<S> {
+    fn from_std(s: S) -> io::Result<Self>
+    where
+        Self: Sized;
+}
+
+macro_rules! map_tokio_net {
+    ($name:ident) => {
+        impl FromStd<std::net::$name> for tokio::net::$name {
+            fn from_std(s: std::net::$name) -> io::Result<Self> {
+                tokio::net::$name::from_std(s)
+            }
+        }
+    };
+}
+
+map_tokio_net!(TcpListener);
+
+fn convert_socket<T, S>(fd: RawFd) -> Result<T>
+where
+    T: FromStd<S>,
+    S: FromRawFd,
+{
+    set_non_blocking(fd)
+        .context("failed to set in non-blocking mode")
+        .map(|_| unsafe { FromRawFd::from_raw_fd(fd) })
+        .and_then(|std| FromStd::from_std(std).context("failed to convert socket"))
+}
+
+fn set_non_blocking(fd: RawFd) -> io::Result<()> {
+    let flags = match unsafe { libc::fcntl(fd, libc::F_GETFL) } {
+        -1 => return Err(io::Error::last_os_error()),
+        flags => flags,
+    };
+
+    if (flags & libc::O_NONBLOCK) == libc::O_NONBLOCK {
+        return Ok(());
+    }
+
+    match unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } {
+        -1 => Err(io::Error::last_os_error()),
+        _ => Ok(()),
+    }
 }

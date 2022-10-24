@@ -15,13 +15,11 @@ clap = { version = "4.0.18", features = ["derive"] }
 env_logger = "0.9.1"
 futures = { version = "0.3.25", default-features = false, features = ["std"] }
 hyper = { version = "0.14.20", features = ["full"] }
+libc = "0.2.135"
 log = "0.4.17"
 thiserror = "1.0.37"
 tokio = { version = "1.21.2", features = ["full"] }
 tower = { version = "0.4.13", features = ["full"] }
-
-[target."cfg(target_os = \"macos\")".dependencies]
-libc = "0.2.135"
 
 [target."cfg(target_os = \"linux\")".dependencies]
 systemd = { version = "0.10.0", default-features = false, optional = true }

@@ -80,5 +80,4 @@ See [systemd.service(5)](https://www.freedesktop.org/software/systemd/man/system
 ```
 [Service]
 ExecStart=/path/to/juno --provider socks --systemd
-NonBlocking=true
 ```
