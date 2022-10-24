@@ -99,7 +99,7 @@ impl From<Response> for Bytes {
     }
 }
 
-pub async fn handle_request(mut client: TcpStream) -> Result<()> {
+pub async fn handle_request(mut client: TcpStream, dialer: Arc<Dialer>) -> Result<()> {
     let auth_req = {
         let len = client.read_u8().await? as usize;
         let mut auth = vec![0; len];
@@ -118,9 +118,9 @@ pub async fn handle_request(mut client: TcpStream) -> Result<()> {
     let (server, response) = match request {
         Request::Connect(addr) => {
             let res = match addr {
-                SocketAddr::V4(addr) => TcpStream::connect(addr).await,
-                SocketAddr::V6(addr) => TcpStream::connect(addr).await,
-                SocketAddr::Raw(domain, port) => TcpStream::connect((domain, port)).await,
+                SocketAddr::V4(addr) => dialer.dial(addr).await,
+                SocketAddr::V6(addr) => dialer.dial(addr).await,
+                SocketAddr::Raw(domain, port) => dialer.dial((domain, port)).await,
             };
 
             match res {

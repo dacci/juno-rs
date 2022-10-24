@@ -3,7 +3,7 @@ mod sys;
 use anyhow::{Context as _, Result};
 use clap::Parser;
 use futures::prelude::*;
-use juno::Service;
+use juno::{Dialer, Service};
 use log::{debug, info, warn};
 use tokio::net::TcpListener;
 use tower::{Service as _, ServiceExt};
@@ -23,6 +23,10 @@ struct Args {
         arg(required = true)
     )]
     listen_stream: Vec<String>,
+
+    /// Specifies the source address of outbound connections.
+    #[arg(short, long, value_name = "ADDRESS")]
+    bind_to: Option<String>,
 
     /// Specifies the name of the socket entry in the service's Sockets dictionary.
     #[cfg(target_os = "macos")]
@@ -45,7 +49,13 @@ async fn main() -> Result<()> {
 
     let args: Args = Args::parse();
 
-    let service = juno::create_service(&args.provider)?;
+    let dialer = if let Some(a) = &args.bind_to {
+        Dialer::bind(a).await?
+    } else {
+        Dialer::default()
+    };
+
+    let service = juno::create_service(&args.provider, dialer)?;
 
     let listeners = bind_all(&args)
         .await?

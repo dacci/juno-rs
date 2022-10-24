@@ -10,6 +10,7 @@ Usage: juno --listen-stream <ADDRESS> --provider <NAME>
 
 Options:
   -l, --listen-stream <ADDRESS>  Specifies an address to listen on for a stream
+  -b, --bind-to <ADDRESS>        Specifies the source address of outbound connections
   -p, --provider <NAME>          Specifies the name of the service provider
   -h, --help                     Print help information
   -V, --version                  Print version information

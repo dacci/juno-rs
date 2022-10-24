@@ -73,14 +73,14 @@ impl From<Response> for Bytes {
     }
 }
 
-pub async fn handle_request(mut client: TcpStream) -> Result<()> {
+pub async fn handle_request(mut client: TcpStream, dialer: Arc<Dialer>) -> Result<()> {
     let request = read_request(&mut client).await?;
 
     let (server, response) = match request {
         Request::Connect(addr, _) => {
             let res = match addr {
-                SocketAddr::V4(addr) => TcpStream::connect(addr).await,
-                SocketAddr::Raw(domain, port) => TcpStream::connect((domain, port)).await,
+                SocketAddr::V4(addr) => dialer.dial(addr).await,
+                SocketAddr::Raw(domain, port) => dialer.dial((domain, port)).await,
                 _ => unreachable!(),
             };
 

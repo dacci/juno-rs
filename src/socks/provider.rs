@@ -1,15 +1,19 @@
+use crate::Dialer;
 use anyhow::Error;
-use futures::future::BoxFuture;
-use futures::{FutureExt, TryFutureExt};
+use future::BoxFuture;
+use futures::prelude::*;
+use std::sync::Arc;
 use std::task;
 use tokio::net::TcpStream;
 
 #[derive(Clone, Default)]
-pub struct Service {}
+pub struct Service {
+    dialer: Arc<Dialer>,
+}
 
 impl Service {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(dialer: Arc<Dialer>) -> Self {
+        Self { dialer }
     }
 }
 
@@ -23,6 +27,8 @@ impl tower::Service<TcpStream> for Service {
     }
 
     fn call(&mut self, stream: TcpStream) -> Self::Future {
-        super::handle_request(stream).err_into().boxed()
+        super::handle_request(stream, Arc::clone(&self.dialer))
+            .err_into()
+            .boxed()
     }
 }
