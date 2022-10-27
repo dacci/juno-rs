@@ -5,10 +5,10 @@ use hyper::client::conn::Builder;
 use hyper::header::{HeaderName, PROXY_AUTHORIZATION};
 use hyper::server::conn::Http;
 use hyper::{Body, Method, Request, Response, StatusCode};
-use log::error;
 use std::sync::Arc;
 use std::task;
 use tokio::net::TcpStream;
+use tracing::error;
 
 #[derive(Clone, Default)]
 pub struct Service {

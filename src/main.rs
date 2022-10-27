@@ -4,9 +4,10 @@ use anyhow::{Context as _, Result};
 use clap::Parser;
 use futures::prelude::*;
 use juno::{Dialer, Service};
-use log::{debug, info, warn};
 use tokio::net::TcpListener;
 use tower::{Service as _, ServiceExt};
+use tracing::{debug, info, warn};
+use tracing_subscriber::prelude::*;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -43,12 +44,25 @@ struct Args {
     provider: String,
 }
 
-#[tokio::main]
-async fn main() -> Result<()> {
-    env_logger::init_from_env(env_logger::Env::new().default_filter_or("info"));
+fn main() -> Result<()> {
+    let args = Args::parse();
 
-    let args: Args = Args::parse();
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(
+            tracing_subscriber::EnvFilter::builder()
+                .with_default_directive(tracing_subscriber::filter::LevelFilter::INFO.into())
+                .from_env()?,
+        )
+        .init();
 
+    tokio::runtime::Builder::new_multi_thread()
+        .enable_all()
+        .build()?
+        .block_on(async_main(args))
+}
+
+async fn async_main(args: Args) -> Result<()> {
     let dialer = if let Some(a) = &args.bind_to {
         Dialer::bind(a).await?
     } else {
