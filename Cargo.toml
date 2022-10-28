@@ -14,12 +14,14 @@ cfg-if = "1.0.0"
 clap = { version = "4.0.18", features = ["derive"] }
 futures = { version = "0.3.25", default-features = false, features = ["std"] }
 hyper = { version = "0.14.20", features = ["full"] }
-libc = "0.2.135"
 thiserror = "1.0.37"
 tokio = { version = "1.21.2", features = ["full"] }
 tower = { version = "0.4.13", features = ["full"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
+
+[target."cfg(target_os = \"macos\")".dependencies]
+libc = "0.2.135"
 
 [target."cfg(target_os = \"linux\")".dependencies]
 systemd = { version = "0.10.0", default-features = false, optional = true }

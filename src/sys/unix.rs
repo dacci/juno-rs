@@ -22,7 +22,8 @@ pub fn activate_socket(name: &str) -> Result<Vec<TcpListener>> {
     launchd::activate_socket(name)
         .context("failed to activate from launchd")?
         .into_iter()
-        .map(convert_socket)
+        .map(|fd| unsafe { FromRawFd::from_raw_fd(fd) })
+        .map(upgrade_listener)
         .collect()
 }
 
@@ -62,51 +63,14 @@ pub fn activate_socket() -> Result<Vec<TcpListener>> {
     systemd::daemon::listen_fds(true)
         .context("failed to activate from systemd")?
         .iter()
-        .map(convert_socket)
+        .map(|fd| unsafe { FromRawFd::from_raw_fd(fd) })
+        .map(upgrade_listener)
         .collect()
 }
 
-trait FromStd<S> {
-    fn from_std(s: S) -> io::Result<Self>
-    where
-        Self: Sized;
-}
-
-macro_rules! map_tokio_net {
-    ($name:ident) => {
-        impl FromStd<std::net::$name> for tokio::net::$name {
-            fn from_std(s: std::net::$name) -> io::Result<Self> {
-                tokio::net::$name::from_std(s)
-            }
-        }
-    };
-}
-
-map_tokio_net!(TcpListener);
-
-fn convert_socket<T, S>(fd: RawFd) -> Result<T>
-where
-    T: FromStd<S>,
-    S: FromRawFd,
-{
-    set_non_blocking(fd)
-        .context("failed to set in non-blocking mode")
-        .map(|_| unsafe { FromRawFd::from_raw_fd(fd) })
-        .and_then(|std| FromStd::from_std(std).context("failed to convert socket"))
-}
-
-fn set_non_blocking(fd: RawFd) -> io::Result<()> {
-    let flags = match unsafe { libc::fcntl(fd, libc::F_GETFL) } {
-        -1 => return Err(io::Error::last_os_error()),
-        flags => flags,
-    };
-
-    if (flags & libc::O_NONBLOCK) == libc::O_NONBLOCK {
-        return Ok(());
-    }
-
-    match unsafe { libc::fcntl(fd, libc::F_SETFL, flags | libc::O_NONBLOCK) } {
-        -1 => Err(io::Error::last_os_error()),
-        _ => Ok(()),
-    }
+fn upgrade_listener(listener: std::net::TcpListener) -> Result<TcpListener> {
+    listener
+        .set_nonblocking(true)
+        .context("failed to set in non-blocking mode")?;
+    TcpListener::from_std(listener).context("failed to convert socket")
 }
