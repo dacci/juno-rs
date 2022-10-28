@@ -12,8 +12,6 @@ use tower::util::BoxCloneService;
 pub type Service = BoxCloneService<TcpStream, (), Error>;
 
 pub fn create_service(provider: &str, dialer: Dialer) -> Result<Service> {
-    let dialer = Arc::new(dialer);
-
     match provider {
         "http" => Ok(Service::new(http::Service::new(dialer))),
         "socks" => Ok(Service::new(socks::provider::Service::new(dialer))),

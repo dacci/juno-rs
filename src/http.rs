@@ -16,8 +16,10 @@ pub struct Service {
 }
 
 impl Service {
-    pub fn new(dialer: Arc<Dialer>) -> Self {
-        Self { dialer }
+    pub fn new(dialer: Dialer) -> Self {
+        Self {
+            dialer: Arc::new(dialer),
+        }
     }
 }
 
