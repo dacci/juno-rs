@@ -4,7 +4,8 @@ use anyhow::{Context as _, Result};
 use clap::Parser;
 use futures::prelude::*;
 use juno::{Dialer, Service};
-use tokio::net::TcpListener;
+use std::collections::HashSet;
+use tokio::net::{lookup_host, TcpListener};
 use tower::{Service as _, ServiceExt};
 use tracing::{debug, info, warn};
 use tracing_subscriber::prelude::*;
@@ -97,11 +98,17 @@ async fn bind_all(args: &Args) -> Result<Vec<TcpListener>> {
         return sys::activate_socket();
     }
 
-    stream::iter(&args.listen_stream)
+    stream::iter(args.listen_stream.iter().collect::<HashSet<_>>())
         .then(|addr| {
-            TcpListener::bind(addr)
-                .map(move |r| r.with_context(|| format!("failed to bind to `{addr}`")))
+            lookup_host(addr).map(move |r| r.with_context(|| format!("failed to resolve {addr}")))
         })
+        .map_ok(|addrs| {
+            stream::iter(addrs).then(|addr| {
+                TcpListener::bind(addr)
+                    .map(move |r| r.with_context(|| format!("failed to bind to {addr}")))
+            })
+        })
+        .try_flatten()
         .try_collect()
         .await
 }
