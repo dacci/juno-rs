@@ -2,7 +2,6 @@ pub(super) mod provider;
 mod v4;
 mod v5;
 
-use crate::Dialer;
 use std::net::{SocketAddrV4, SocketAddrV6};
 use std::sync::Arc;
 use thiserror::Error;
@@ -42,13 +41,5 @@ impl SocketAddr {
 
     fn raw(domain: String, port: u16) -> Self {
         Self::Raw(domain, port)
-    }
-}
-
-async fn handle_request(mut stream: TcpStream, dialer: Arc<Dialer>) -> Result<()> {
-    match stream.read_u8().await? {
-        4 => v4::handle_request(stream, dialer).await,
-        5 => v5::handle_request(stream, dialer).await,
-        ver => Err(Error::Protocol(format!("illegal protocol version `{ver}`"))),
     }
 }

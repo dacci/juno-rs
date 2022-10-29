@@ -1,4 +1,5 @@
 use super::*;
+use crate::Dialer;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::io::BufRead;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

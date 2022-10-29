@@ -1,7 +1,7 @@
 use super::*;
+use crate::Dialer;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::io::Read;
-use std::vec;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 
