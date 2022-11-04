@@ -10,11 +10,11 @@ pub async fn recv_signal() -> io::Result<()> {
     let mut ctrl_shutdown = ctrl_shutdown()?;
 
     tokio::select! {
-        _ = ctrl_c.recv() = {},
-        _ = ctrl_break.recv() = {},
-        _ = ctrl_close.recv() = {},
-        _ = ctrl_logoff.recv() = {},
-        _ = ctrl_shutdown.recv() = {},
+        _ = ctrl_c.recv() => {},
+        _ = ctrl_break.recv() => {},
+        _ = ctrl_close.recv() => {},
+        _ = ctrl_logoff.recv() => {},
+        _ = ctrl_shutdown.recv() => {},
     }
 
     Ok(())
