@@ -15,7 +15,7 @@ clap = { version = "4.0.18", features = ["derive"] }
 futures = { version = "0.3.25", default-features = false, features = ["std"] }
 hyper = { version = "0.14.20", features = ["full"] }
 thiserror = "1.0.37"
-tokio = { version = "1.21.2", features = ["full"] }
+tokio = { version = "1.23.1", features = ["full"] }
 tower = { version = "0.4.13", features = ["full"] }
 tracing = "0.1.37"
 tracing-subscriber = { version = "0.3.16", features = ["env-filter"] }
