@@ -1,10 +1,12 @@
 use crate::Dialer;
+use bytes::Bytes;
 use future::BoxFuture;
 use futures::prelude::*;
-use hyper::client::conn::Builder;
+use http_body_util::{combinators::BoxBody, BodyExt, Empty, Full};
+use hyper::client::conn::http1::Builder as Client;
 use hyper::header::{HeaderName, PROXY_AUTHORIZATION};
-use hyper::server::conn::Http;
-use hyper::{Body, Method, Request, Response, StatusCode};
+use hyper::server::conn::http1::Builder as Server;
+use hyper::{body::Incoming, Method, Request, Response, StatusCode};
 use std::sync::Arc;
 use std::task;
 use tokio::net::TcpStream;
@@ -33,9 +35,9 @@ impl tower::Service<TcpStream> for Service {
     }
 
     fn call(&mut self, stream: TcpStream) -> Self::Future {
-        Http::new()
-            .http1_preserve_header_case(true)
-            .http1_title_case_headers(true)
+        Server::new()
+            .preserve_header_case(true)
+            .title_case_headers(true)
             .serve_connection(stream, Session::new(&self.dialer))
             .with_upgrades()
             .err_into()
@@ -57,8 +59,8 @@ impl Session {
 
     fn handle_connect(
         &self,
-        req: Request<Body>,
-    ) -> impl Future<Output = Result<Response<Body>, hyper::Error>> {
+        req: Request<Incoming>,
+    ) -> impl Future<Output = Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>> {
         let res = if let Some(authority) = req.uri().authority() {
             let addr = authority.to_string();
             let dialer = Arc::clone(&self.dialer);
@@ -66,7 +68,7 @@ impl Session {
         } else {
             Err(Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::from("CONNECT must be to a socket address"))
+                .body(full("CONNECT must be to a socket address"))
                 .unwrap())
         };
 
@@ -81,7 +83,7 @@ impl Session {
                 Err(e) => {
                     return Ok(Response::builder()
                         .status(StatusCode::BAD_GATEWAY)
-                        .body(Body::from(e.to_string()))
+                        .body(full(e.to_string()))
                         .unwrap());
                 }
             };
@@ -97,7 +99,7 @@ impl Session {
                 };
             });
 
-            Ok(Response::new(Body::empty()))
+            Ok(Response::new(empty()))
         }
     }
 
@@ -121,8 +123,8 @@ impl Session {
 
     fn handle_request(
         &self,
-        req: Request<Body>,
-    ) -> impl Future<Output = Result<Response<Body>, hyper::Error>> {
+        req: Request<Incoming>,
+    ) -> impl Future<Output = Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error>> {
         let res = if let Some(authority) = req.uri().authority() {
             let addr = format!(
                 "{}:{}",
@@ -135,7 +137,7 @@ impl Session {
         } else {
             Err(Response::builder()
                 .status(StatusCode::BAD_REQUEST)
-                .body(Body::empty())
+                .body(empty())
                 .unwrap())
         };
 
@@ -150,14 +152,14 @@ impl Session {
                 Err(e) => {
                     return Ok(Response::builder()
                         .status(StatusCode::BAD_GATEWAY)
-                        .body(Body::from(e.to_string()))
+                        .body(full(e.to_string()))
                         .unwrap());
                 }
             };
 
-            match Builder::new()
-                .http1_preserve_header_case(true)
-                .http1_title_case_headers(true)
+            match Client::new()
+                .preserve_header_case(true)
+                .title_case_headers(true)
                 .handshake(stream)
                 .await
             {
@@ -168,27 +170,24 @@ impl Session {
                         }
                     });
 
-                    sender.send_request(req).await
+                    let res = sender.send_request(req).await?;
+                    Ok(res.map(|b| b.boxed()))
                 }
                 Err(e) => Ok(Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
-                    .body(Body::from(e.to_string()))
+                    .body(full(e.to_string()))
                     .unwrap()),
             }
         }
     }
 }
 
-impl tower::Service<Request<Body>> for Session {
-    type Response = Response<Body>;
+impl hyper::service::Service<Request<Incoming>> for Session {
+    type Response = Response<BoxBody<Bytes, hyper::Error>>;
     type Error = hyper::Error;
     type Future = BoxFuture<'static, Result<Self::Response, Self::Error>>;
 
-    fn poll_ready(&mut self, _: &mut task::Context<'_>) -> task::Poll<Result<(), Self::Error>> {
-        task::Poll::Ready(Ok(()))
-    }
-
-    fn call(&mut self, req: Request<Body>) -> Self::Future {
+    fn call(&mut self, req: Request<Incoming>) -> Self::Future {
         if Method::CONNECT == req.method() {
             self.handle_connect(req).boxed()
         } else {
@@ -197,6 +196,17 @@ impl tower::Service<Request<Body>> for Session {
     }
 }
 
+fn empty() -> BoxBody<Bytes, hyper::Error> {
+    Empty::<Bytes>::new()
+        .map_err(|never| match never {})
+        .boxed()
+}
+
+fn full<T: Into<Bytes>>(chunk: T) -> BoxBody<Bytes, hyper::Error> {
+    Full::new(chunk.into())
+        .map_err(|never| match never {})
+        .boxed()
+}
 #[cfg(test)]
 mod tests {
     use super::*;
