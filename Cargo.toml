@@ -9,7 +9,7 @@ license = "MIT"
 
 [dependencies]
 anyhow = "1.0.98"
-bytes = "1.10.1"
+bytes = "1.11.1"
 cfg-if = "1.0.0"
 clap = { version = "4.5.38", features = ["derive"] }
 futures = { version = "0.3.31", default-features = false, features = ["std"] }
